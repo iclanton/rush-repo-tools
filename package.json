@@ -1,0 +1,20 @@
+{
+  "name": "repo-processor",
+  "version": "0.1.0",
+  "description": "",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@microsoft/rush-lib": "5.23.0",
+    "@rushstack/node-core-library": "3.19.5",
+    "glob": "7.1.6"
+  },
+  "devDependencies": {
+    "typescript": "3.8.3",
+    "@types/node": "10.17.17",
+    "@types/glob": "7.1.1"
+  },
+  "author": "",
+  "license": "ISC"
+}
