@@ -6,7 +6,7 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@microsoft/rush-lib": "5.23.0",
+    "@microsoft/rush-lib": "5.39.1",
     "@rushstack/node-core-library": "3.19.5",
     "glob": "7.1.6"
   },
