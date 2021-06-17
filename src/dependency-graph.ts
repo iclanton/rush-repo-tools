@@ -1,21 +1,21 @@
-import {
-  RushConfiguration,
-  PackageJsonDependency
-} from '@microsoft/rush-lib';
-import { IPackageJsonDependencyTable } from '@rushstack/node-core-library';
+import { RushConfiguration } from "@microsoft/rush-lib";
+import { IPackageJsonDependencyTable } from "@rushstack/node-core-library";
 
-const rushConfiguration: RushConfiguration = RushConfiguration.loadFromDefaultLocation({
-  startingFolder: process.cwd()
-});
+const rushConfiguration: RushConfiguration =
+  RushConfiguration.loadFromDefaultLocation({
+    startingFolder: process.cwd(),
+  });
 
 interface IDependencyGraphEntry {
   dependencies: string[];
   dependents: string[];
 }
 
-const dependencyGraph: { [projectName: string]: IDependencyGraphEntry} = {};
+const dependencyGraph: { [projectName: string]: IDependencyGraphEntry } = {};
 
-function ensureAndGetDependencyGraphEntry(projectName): IDependencyGraphEntry {
+function ensureAndGetDependencyGraphEntry(
+  projectName: string
+): IDependencyGraphEntry {
   if (!dependencyGraph[projectName]) {
     dependencyGraph[projectName] = { dependencies: [], dependents: [] };
   }
@@ -24,9 +24,12 @@ function ensureAndGetDependencyGraphEntry(projectName): IDependencyGraphEntry {
 }
 
 for (const project of rushConfiguration.projects) {
-  const thisProjectEntry: IDependencyGraphEntry = ensureAndGetDependencyGraphEntry(project.packageName);
+  const thisProjectEntry: IDependencyGraphEntry =
+    ensureAndGetDependencyGraphEntry(project.packageName);
 
-  function addDependencies(dependencies: IPackageJsonDependencyTable): void {
+  function addDependencies(
+    dependencies: IPackageJsonDependencyTable | undefined
+  ): void {
     for (const dependencyName in dependencies) {
       if (
         rushConfiguration.projectsByName.has(dependencyName) &&
@@ -34,7 +37,8 @@ for (const project of rushConfiguration.projects) {
       ) {
         thisProjectEntry.dependencies.push(dependencyName);
 
-        const dependencyEntry: IDependencyGraphEntry = ensureAndGetDependencyGraphEntry(dependencyName);
+        const dependencyEntry: IDependencyGraphEntry =
+          ensureAndGetDependencyGraphEntry(dependencyName);
         dependencyEntry.dependents.push(project.packageName);
       }
     }
