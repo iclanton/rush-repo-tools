@@ -9,7 +9,7 @@
     "@microsoft/rush-lib": "5.46.1",
     "@rushstack/node-core-library": "3.39.0",
     "glob": "7.1.6",
-    "semver": "7.3.2"
+    "semver": "7.5.2"
   },
   "devDependencies": {
     "@rushstack/heft-node-rig": "^1.1.2",
