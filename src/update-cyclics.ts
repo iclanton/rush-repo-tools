@@ -1,4 +1,4 @@
-import { RushConfiguration, DependencyType } from "@microsoft/rush-lib";
+import { RushConfiguration, DependencyType } from "@rushstack/rush-sdk";
 import { Async, Executable } from "@rushstack/node-core-library";
 import { ChildProcess } from "child_process";
 

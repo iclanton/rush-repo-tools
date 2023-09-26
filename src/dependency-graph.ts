@@ -1,4 +1,4 @@
-import { RushConfiguration } from "@microsoft/rush-lib";
+import { RushConfiguration } from "@rushstack/rush-sdk";
 import { IPackageJsonDependencyTable } from "@rushstack/node-core-library";
 
 const rushConfiguration: RushConfiguration =

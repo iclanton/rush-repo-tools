@@ -1,11 +1,9 @@
-import {
-  RushConfiguration,
-  PackageJsonDependency
-} from '@microsoft/rush-lib';
+import { RushConfiguration, PackageJsonDependency } from "@rushstack/rush-sdk";
 
-const rushConfiguration: RushConfiguration = RushConfiguration.loadFromDefaultLocation({
-  startingFolder: process.cwd()
-});
+const rushConfiguration: RushConfiguration =
+  RushConfiguration.loadFromDefaultLocation({
+    startingFolder: process.cwd(),
+  });
 
 for (const project of rushConfiguration.projects) {
   function updateDeps(dependencies: readonly PackageJsonDependency[]): void {
@@ -16,7 +14,8 @@ for (const project of rushConfiguration.projects) {
       ) {
         project.packageJsonEditor.addOrUpdateDependency(
           dependency.name,
-          rushConfiguration.projectsByName.get(dependency.name).packageJson.version,
+          rushConfiguration.projectsByName.get(dependency.name)!.packageJson
+            .version,
           dependency.dependencyType
         );
       }
