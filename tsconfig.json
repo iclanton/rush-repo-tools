@@ -1,12 +1,10 @@
 {
+  "extends": "./node_modules/@rushstack/heft-node-rig/profiles/default/tsconfig-base.json",
+
   "compilerOptions": {
-    "outDir": "lib",
-    "rootDir": "src",
-    "target": "es6",
-    "moduleResolution": "node",
-    "module": "commonjs",
-    "types": [
-      "node"
-    ]
+    "types": ["node"],
+    "downlevelIteration": true,
+    "useUnknownInCatchVariables": false,
+    "skipLibCheck": true
   }
 }

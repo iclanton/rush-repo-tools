@@ -1,27 +1,31 @@
-import { RushConfiguration } from '@microsoft/rush-lib';
+import { RushConfiguration } from "@rushstack/rush-sdk";
 import {
   FileSystem,
   JsonFile,
-  IPackageJson
-} from '@rushstack/node-core-library';
-import * as path from 'path';
-import * as glob from 'glob';
+  IPackageJson,
+} from "@rushstack/node-core-library";
+import * as path from "path";
+import * as glob from "glob";
 
-const rushConfiguration: RushConfiguration = RushConfiguration.loadFromDefaultLocation({
-  startingFolder: process.cwd()
-});
+const rushConfiguration: RushConfiguration =
+  RushConfiguration.loadFromDefaultLocation({
+    startingFolder: process.cwd(),
+  });
 
-const ALLOWED_DEPS: Set<string> = new Set<string>([
-  'tslib'
-]);
+const ALLOWED_DEPS: Set<string> = new Set<string>(["tslib"]);
 
 function getDependencyReferencesForProject(projectPath: string): Set<string> {
   const requireMatches: Set<string> = new Set<string>();
 
-  for (const filename of glob.sync('{./*.{ts,js,tsx,jsx},./{src,lib}/**/*.{ts,js,tsx,jsx},*.js}', { cwd: projectPath })) {
+  for (const filename of glob.sync(
+    "{./*.{ts,js,tsx,jsx},./{src,lib}/**/*.{ts,js,tsx,jsx},*.js}",
+    { cwd: projectPath }
+  )) {
     try {
-      const contents: string = FileSystem.readFile(path.resolve(projectPath, filename));
-      const lines: string[] = contents.split('\n');
+      const contents: string = FileSystem.readFile(
+        path.resolve(projectPath, filename)
+      );
+      const lines: string[] = contents.split("\n");
 
       for (const line of lines) {
         if (!line.trim()) {
@@ -63,12 +67,12 @@ function getDependencyReferencesForProject(projectPath: string): Set<string> {
 
           // Example:
           // /// <reference types="something" />
-          /\/\/\/\s*<\s*reference\s+types\s*=\s*["]([^"]+)["]\s*\/>/g
+          /\/\/\/\s*<\s*reference\s+types\s*=\s*["]([^"]+)["]\s*\/>/g,
         ];
 
         for (const requireRegExp of requireRegExps) {
           let requireRegExpResult: RegExpExecArray | null;
-          while (requireRegExpResult = requireRegExp.exec(line)) {
+          while ((requireRegExpResult = requireRegExp.exec(line))) {
             requireMatches.add(requireRegExpResult[1]);
           }
         }
@@ -85,15 +89,17 @@ function getDependencyReferencesForProject(projectPath: string): Set<string> {
     // Example: "@ms/my-package" --> "@ms/my-package"
     const packageRegExp: RegExp = /^((@[a-z\-0-9!_]+\/)?[a-z\-0-9!_]+)\/?/;
 
-    const packageRegExpResult: RegExpExecArray | null = packageRegExp.exec(requireMatch);
+    const packageRegExpResult: RegExpExecArray | null =
+      packageRegExp.exec(requireMatch);
     if (packageRegExpResult) {
       packageMatches.add(packageRegExpResult[1]);
     }
   });
 
-  const tsconfigFilePath: string = path.resolve(projectPath, 'tsconfig.json');
+  const tsconfigFilePath: string = path.resolve(projectPath, "tsconfig.json");
   if (FileSystem.exists(tsconfigFilePath)) {
-    const tsconfigFile: { compilerOptions: { types: string[] }} = JsonFile.load(tsconfigFilePath);
+    const tsconfigFile: { compilerOptions: { types: string[] } } =
+      JsonFile.load(tsconfigFilePath);
     if (tsconfigFile.compilerOptions && tsconfigFile.compilerOptions.types) {
       for (const configType of tsconfigFile.compilerOptions.types) {
         packageMatches.add(configType);
@@ -106,12 +112,14 @@ function getDependencyReferencesForProject(projectPath: string): Set<string> {
 }
 
 for (const project of rushConfiguration.projects) {
-  console.log(`=== Project: ${project.packageName} === `)
-  const usedDependencies: Set<string> = getDependencyReferencesForProject(project.projectFolder);
+  console.log(`=== Project: ${project.packageName} === `);
+  const usedDependencies: Set<string> = getDependencyReferencesForProject(
+    project.projectFolder
+  );
   const unusedDependencies: Set<string> = new Set<string>([
     ...Object.keys(project.packageJson.devDependencies || []),
     ...Object.keys(project.packageJson.dependencies || []),
-    ...Object.keys(project.packageJson.peerDependencies || [])
+    ...Object.keys(project.packageJson.peerDependencies || []),
   ]);
 
   const undeclaredDependencies: Set<string> = new Set<string>();
@@ -134,7 +142,9 @@ for (const project of rushConfiguration.projects) {
   }
 
   for (const unusedDependency of unusedDependencies) {
-    for (const [, script] of Object.entries(project.packageJson.scripts)) {
+    for (const [, script] of Object.entries(
+      project.packageJson.scripts || {}
+    )) {
       if (script.indexOf(unusedDependency) !== -1) {
         unusedDependencies.delete(unusedDependency);
         break;
@@ -143,43 +153,62 @@ for (const project of rushConfiguration.projects) {
   }
 
   if (unusedDependencies.size > 0) {
-    console.log('Unused dependencies:');
+    console.log("Unused dependencies:");
     unusedDependencies.forEach((dependency) => console.log(` - ${dependency}`));
   } else {
-    console.log('Unused dependencies: NONE');
+    console.log("Unused dependencies: NONE");
   }
 
   if (undeclaredDependencies.size > 0) {
-    console.log('Undeclared dependencies:');
-    undeclaredDependencies.forEach((dependency) => console.log(` - ${dependency}`));
+    console.log("Undeclared dependencies:");
+    undeclaredDependencies.forEach((dependency) =>
+      console.log(` - ${dependency}`)
+    );
   } else {
-    console.log('Undeclared dependencies: NONE');
+    console.log("Undeclared dependencies: NONE");
   }
 
   JsonFile.save(
     {
       unusedDependencies: Array.from(unusedDependencies),
-      undeclaredDependencies: Array.from(undeclaredDependencies)
+      undeclaredDependencies: Array.from(undeclaredDependencies),
     },
-    path.join(project.projectFolder, 'scanned-deps.log')
+    path.join(project.projectFolder, "scanned-deps.log")
   );
 
   if (unusedDependencies.size > 0) {
-    const projectPackageJsonPath: string = path.resolve(project.projectFolder, 'package.json');
+    const projectPackageJsonPath: string = path.resolve(
+      project.projectFolder,
+      "package.json"
+    );
     const packageJson: IPackageJson = JsonFile.load(projectPackageJsonPath);
     for (const unusedDependency of unusedDependencies) {
-      removeEntryFromPackageJsonField(unusedDependency, packageJson.dependencies);
-      removeEntryFromPackageJsonField(unusedDependency, packageJson.devDependencies);
-      removeEntryFromPackageJsonField(unusedDependency, packageJson.peerDependencies);
+      removeEntryFromPackageJsonField(
+        unusedDependency,
+        packageJson.dependencies
+      );
+      removeEntryFromPackageJsonField(
+        unusedDependency,
+        packageJson.devDependencies
+      );
+      removeEntryFromPackageJsonField(
+        unusedDependency,
+        packageJson.peerDependencies
+      );
     }
 
-    JsonFile.save(packageJson, projectPackageJsonPath, { updateExistingFile: true });
+    JsonFile.save(packageJson, projectPackageJsonPath, {
+      updateExistingFile: true,
+    });
   }
 
   console.log();
 }
 
-function removeEntryFromPackageJsonField(depName: string, field: { [depName: string]: string } | undefined): void {
+function removeEntryFromPackageJsonField(
+  depName: string,
+  field: { [depName: string]: string } | undefined
+): void {
   if (field && field[depName]) {
     delete field[depName];
   }

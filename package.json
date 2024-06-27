@@ -6,16 +6,14 @@
     "build": "heft build --clean"
   },
   "dependencies": {
-    "@microsoft/rush-lib": "5.126.0",
-    "@rushstack/node-core-library": "4.0.2",
-    "@rushstack/rush-sdk": "5.126.0",
-    "@rushstack/terminal": "0.10.0",
+    "@rushstack/rush-sdk": "latest",
+    "@rushstack/node-core-library": "latest",
     "glob": "7.2.0",
     "semver": "7.3.5"
   },
   "devDependencies": {
-    "@rushstack/heft-node-rig": "^1.5.0",
-    "@rushstack/heft": "^0.44.0",
+    "@rushstack/heft-node-rig": "latest",
+    "@rushstack/heft": "latest",
     "@types/node": "18.18.9",
     "@types/glob": "7.1.4",
     "@types/semver": "7.3.8",
