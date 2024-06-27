@@ -31,7 +31,7 @@ const runAsync = async (): Promise<void> => {
             "version",
           ]);
           const stdoutBuffer: string[] = [];
-          childProcess.stdout.on("data", (chunk) => stdoutBuffer.push(chunk));
+          childProcess.stdout?.on("data", (chunk) => stdoutBuffer.push(chunk));
           childProcess.on("exit", (code: number) => {
             if (code) {
               reject(new Error(`Exited with ${code}`));
