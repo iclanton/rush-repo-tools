@@ -1,9 +1,4 @@
-import {
-  Async,
-  Executable,
-  JsonFile,
-  JsonSyntax,
-} from "@rushstack/node-core-library";
+import { Async, Executable, JsonFile } from "@rushstack/node-core-library";
 import { RushConfiguration } from "@rushstack/rush-sdk";
 import type { IRushConfigurationJson } from "@rushstack/rush-sdk/lib/api/RushConfiguration";
 import { ChildProcess } from "child_process";
@@ -163,6 +158,23 @@ async function runAsync(): Promise<void> {
     },
     { concurrency: 50 },
   );
+
+  const localRushJson: IRushConfigurationJson = JsonFile.load(
+    rushConfiguration.rushJsonFile,
+  ) as IRushConfigurationJson;
+  const oldRushVersion: string = localRushJson.rushVersion;
+  const newRushVersion: string = rushJson.rushVersion;
+  if (oldRushVersion !== newRushVersion) {
+    console.log(
+      `Updating rushVersion in rush.json: ${oldRushVersion} -> ${newRushVersion}`,
+    );
+    localRushJson.rushVersion = newRushVersion;
+    await JsonFile.saveAsync(localRushJson, rushConfiguration.rushJsonFile, {
+      updateExistingFile: true,
+    });
+  } else {
+    console.log(`rushVersion is already up to date (${oldRushVersion}).`);
+  }
 
   console.log(`\nDone. Updated ${updatedProjectCount} project(s).`);
 
