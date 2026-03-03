@@ -1,20 +1,18 @@
-import { ChildProcess } from "node:child_process";
-
 import { Async, Executable, JsonFile } from "@rushstack/node-core-library";
 import { RushConfiguration } from "@rushstack/rush-sdk";
-import type { IRushConfigurationJson } from "@rushstack/rush-sdk/lib/api/RushConfiguration";
+import { ChildProcess } from "child_process";
 
 async function runAsync(): Promise<void> {
   const rushConfiguration: RushConfiguration =
     RushConfiguration.loadFromDefaultLocation();
 
-  const rushstackDependencies: Set<string> = new Set(["@microsoft/rush"]);
+  const newVersions: Map<string, string> = new Map();
 
   function addDependencies(depSet: Record<string, string> | undefined): void {
     if (depSet) {
       for (const dep of Object.keys(depSet)) {
         if (dep.startsWith("@rushstack/") || dep.startsWith("@microsoft/")) {
-          rushstackDependencies.add(dep);
+          newVersions.set(dep, "");
         }
       }
     }
@@ -27,34 +25,70 @@ async function runAsync(): Promise<void> {
     addDependencies(devDependencies);
   }
 
-  const newVersions: Map<string, string> = new Map(
-    await Async.mapAsync(
-      rushstackDependencies.keys(),
-      async (dependencyName) => {
-        const childProcess: ChildProcess = Executable.spawn("npm", [
-          "view",
-          dependencyName,
-          "version",
-        ]);
-        const { stdout, stderr } = await Executable.waitForExitAsync(
-          childProcess,
-          {
-            encoding: "utf8",
-            throwOnNonZeroExitCode: true,
-            throwOnSignal: true,
+  const packageNames: string[] = [...newVersions.keys()];
+  console.log(`Fetching latest versions for ${packageNames.length} packages...`);
+
+  const errors: { packageName: string; message: string }[] = [];
+  let completed: number = 0;
+
+  await Async.forEachAsync(
+    packageNames,
+    async (packageName) => {
+      try {
+        await new Promise<void>(
+          (resolve: () => void, reject: (error: Error) => void) => {
+            const childProcess: ChildProcess = Executable.spawn("npm", [
+              "view",
+              packageName,
+              "version",
+            ]);
+            const stdoutBuffer: string[] = [];
+            const stderrBuffer: string[] = [];
+            childProcess.stdout!.on("data", (chunk) =>
+              stdoutBuffer.push(chunk)
+            );
+            childProcess.stderr!.on("data", (chunk) =>
+              stderrBuffer.push(chunk)
+            );
+            childProcess.on("exit", (code: number) => {
+              if (code) {
+                const stderr: string = stderrBuffer.join("").trim();
+                reject(
+                  new Error(
+                    `"npm view ${packageName} version" exited with code ${code}${stderr ? `:\n  ${stderr}` : ""}`
+                  )
+                );
+              } else {
+                const version: string = stdoutBuffer.join("").trim();
+                newVersions.set(packageName, version);
+                resolve();
+              }
+            });
           }
         );
-        if (stderr) {
-          throw new Error(
-            `Getting version for ${dependencyName} printed to stderr: ${stderr}`
-          );
-        }
-        const version: string = stdout.trim();
-        console.log(`Found version "${version}" for "${dependencyName}"`);
-        return [dependencyName, version];
-      },
-      { concurrency: 10 }
-    )
+      } catch (e) {
+        errors.push({ packageName, message: (e as Error).message });
+      }
+
+      completed++;
+      if (completed % 10 === 0 || completed === packageNames.length) {
+        console.log(`  Progress: ${completed}/${packageNames.length}`);
+      }
+    },
+    { concurrency: 10 }
+  );
+
+  if (errors.length > 0) {
+    console.error(`\nFailed to fetch versions for ${errors.length} package(s):`);
+    for (const { packageName, message } of errors) {
+      console.error(`  ${packageName}: ${message}`);
+    }
+    console.log();
+  }
+
+  const successCount: number = packageNames.length - errors.length;
+  console.log(
+    `Successfully resolved ${successCount}/${packageNames.length} packages. Updating project files...`
   );
 
   function updateDependencies(
@@ -74,6 +108,8 @@ async function runAsync(): Promise<void> {
     return changed;
   }
 
+  let updatedProjectCount: number = 0;
+
   await Async.forEachAsync(
     rushConfiguration.projects,
     async ({ projectFolder, packageJson }) => {
@@ -83,9 +119,10 @@ async function runAsync(): Promise<void> {
       updated = updateDependencies(devDependencies) || updated;
 
       if (updated) {
-        console.log(`Updating ${projectFolder}`);
+        updatedProjectCount++;
+        console.log(`  Updating ${projectFolder}`);
 
-        JsonFile.saveAsync(packageJson, `${projectFolder}/package.json`, {
+        await JsonFile.saveAsync(packageJson, `${projectFolder}/package.json`, {
           updateExistingFile: true,
         });
       }
@@ -93,19 +130,14 @@ async function runAsync(): Promise<void> {
     { concurrency: 50 }
   );
 
-  const rushJson: IRushConfigurationJson = await JsonFile.loadAsync(
-    rushConfiguration.rushJsonFile
-  );
-  const newRushVersion: string | undefined = newVersions.get("@microsoft/rush");
-  if (newRushVersion && rushJson.rushVersion !== newRushVersion) {
-    console.log(
-      `Updating rushVersion in rush.json from ${rushJson.rushVersion} to ${newRushVersion}`
-    );
-    rushJson.rushVersion = newRushVersion;
-    await JsonFile.saveAsync(rushJson, rushConfiguration.rushJsonFile, {
-      updateExistingFile: true,
-    });
+  console.log(`\nDone. Updated ${updatedProjectCount} project(s).`);
+
+  if (errors.length > 0) {
+    process.exitCode = 1;
   }
 }
 
-runAsync();
+runAsync().catch((error: Error) => {
+  console.error(`\nFatal error: ${error.message}`);
+  process.exitCode = 1;
+});
