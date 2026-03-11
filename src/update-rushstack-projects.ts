@@ -1,5 +1,5 @@
 import { Async, Executable, JsonFile } from "@rushstack/node-core-library";
-import { RushConfiguration } from "@rushstack/rush-sdk";
+import { CommonVersionsConfiguration, RushConfiguration } from "@rushstack/rush-sdk";
 import type { IRushConfigurationJson } from "@rushstack/rush-sdk/lib/api/RushConfiguration";
 import { ChildProcess } from "child_process";
 
@@ -174,6 +174,22 @@ async function runAsync(): Promise<void> {
     });
   } else {
     console.log(`rushVersion is already up to date (${oldRushVersion}).`);
+  }
+
+  const commonVersions: CommonVersionsConfiguration =
+    rushConfiguration.defaultSubspace.getCommonVersions();
+  let commonVersionsUpdated: boolean = false;
+  for (const [packageName, version] of newVersions.entries()) {
+    if (version && commonVersions.preferredVersions.get(packageName) !== version) {
+      commonVersions.preferredVersions.set(packageName, version);
+      commonVersionsUpdated = true;
+    }
+  }
+  if (commonVersionsUpdated) {
+    commonVersions.save();
+    console.log(`Updated preferred versions in ${commonVersions.filePath}`);
+  } else {
+    console.log("common-versions.json preferred versions are already up to date.");
   }
 
   console.log(`\nDone. Updated ${updatedProjectCount} project(s).`);
