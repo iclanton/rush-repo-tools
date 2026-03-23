@@ -120,16 +120,25 @@ async function runAsync(): Promise<void> {
     `Successfully resolved ${successCount}/${packageNames.length} packages. Updating project files...`,
   );
 
+  function getVersionPrefix(version: string): string {
+    const match: RegExpMatchArray | null = version.match(/^([^\d]*)/);
+    return match ? match[1] : "";
+  }
+
   function updateDependencies(
     depSet: Record<string, string> | undefined,
   ): boolean {
     let changed: boolean = false;
     if (depSet) {
       for (const [dep, oldVersion] of Object.entries(depSet)) {
-        const newVersion = newVersions.get(dep);
-        if (newVersion && newVersion !== oldVersion) {
-          depSet[dep] = newVersion;
-          changed = true;
+        const newVersion: string | undefined = newVersions.get(dep);
+        if (newVersion) {
+          const prefix: string = getVersionPrefix(oldVersion);
+          const newVersionWithPrefix: string = prefix + newVersion;
+          if (newVersionWithPrefix !== oldVersion) {
+            depSet[dep] = newVersionWithPrefix;
+            changed = true;
+          }
         }
       }
     }
@@ -180,9 +189,14 @@ async function runAsync(): Promise<void> {
     rushConfiguration.defaultSubspace.getCommonVersions();
   let commonVersionsUpdated: boolean = false;
   for (const [packageName, version] of newVersions.entries()) {
-    if (version && commonVersions.preferredVersions.get(packageName) !== version) {
-      commonVersions.preferredVersions.set(packageName, version);
-      commonVersionsUpdated = true;
+    if (version) {
+      const oldPreferredVersion: string | undefined = commonVersions.preferredVersions.get(packageName);
+      const prefix: string = oldPreferredVersion ? getVersionPrefix(oldPreferredVersion) : "";
+      const newVersionWithPrefix: string = prefix + version;
+      if (oldPreferredVersion !== newVersionWithPrefix) {
+        commonVersions.preferredVersions.set(packageName, newVersionWithPrefix);
+        commonVersionsUpdated = true;
+      }
     }
   }
   if (commonVersionsUpdated) {
