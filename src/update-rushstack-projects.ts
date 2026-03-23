@@ -120,9 +120,10 @@ async function runAsync(): Promise<void> {
     `Successfully resolved ${successCount}/${packageNames.length} packages. Updating project files...`,
   );
 
-  function getVersionPrefix(version: string): string {
-    const match: RegExpMatchArray | null = version.match(/^([^\d]*)/);
-    return match ? match[1] : "";
+  function applyVersionPrefix(oldVersion: string, newVersion: string): string {
+    const match: RegExpMatchArray | null = oldVersion.match(/^([^\d]*)/);
+    const prefix: string = match ? match[1] : "";
+    return prefix + newVersion;
   }
 
   function updateDependencies(
@@ -133,8 +134,7 @@ async function runAsync(): Promise<void> {
       for (const [dep, oldVersion] of Object.entries(depSet)) {
         const newVersion: string | undefined = newVersions.get(dep);
         if (newVersion) {
-          const prefix: string = getVersionPrefix(oldVersion);
-          const newVersionWithPrefix: string = prefix + newVersion;
+          const newVersionWithPrefix: string = applyVersionPrefix(oldVersion, newVersion);
           if (newVersionWithPrefix !== oldVersion) {
             depSet[dep] = newVersionWithPrefix;
             changed = true;
@@ -192,8 +192,7 @@ async function runAsync(): Promise<void> {
     if (version) {
       const oldPreferredVersion: string | undefined = commonVersions.preferredVersions.get(packageName);
       if (oldPreferredVersion !== undefined) {
-        const prefix: string = getVersionPrefix(oldPreferredVersion);
-        const newVersionWithPrefix: string = prefix + version;
+        const newVersionWithPrefix: string = applyVersionPrefix(oldPreferredVersion, version);
         if (oldPreferredVersion !== newVersionWithPrefix) {
           commonVersions.preferredVersions.set(packageName, newVersionWithPrefix);
           commonVersionsUpdated = true;
