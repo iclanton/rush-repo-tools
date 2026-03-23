@@ -191,11 +191,13 @@ async function runAsync(): Promise<void> {
   for (const [packageName, version] of newVersions.entries()) {
     if (version) {
       const oldPreferredVersion: string | undefined = commonVersions.preferredVersions.get(packageName);
-      const prefix: string = oldPreferredVersion ? getVersionPrefix(oldPreferredVersion) : "";
-      const newVersionWithPrefix: string = prefix + version;
-      if (oldPreferredVersion !== newVersionWithPrefix) {
-        commonVersions.preferredVersions.set(packageName, newVersionWithPrefix);
-        commonVersionsUpdated = true;
+      if (oldPreferredVersion !== undefined) {
+        const prefix: string = getVersionPrefix(oldPreferredVersion);
+        const newVersionWithPrefix: string = prefix + version;
+        if (oldPreferredVersion !== newVersionWithPrefix) {
+          commonVersions.preferredVersions.set(packageName, newVersionWithPrefix);
+          commonVersionsUpdated = true;
+        }
       }
     }
   }
