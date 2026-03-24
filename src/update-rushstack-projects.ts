@@ -45,6 +45,8 @@ async function runAsync(): Promise<void> {
   );
 
   const newVersions: Map<string, string> = new Map();
+  // Always fetch the latest Rush version for updating rushVersion in rush.json
+  newVersions.set("@microsoft/rush", "");
 
   function collectDeps(depSet: Record<string, string> | undefined): void {
     if (depSet) {
@@ -245,8 +247,8 @@ async function runAsync(): Promise<void> {
     rushConfiguration.rushJsonFile,
   );
   const oldRushVersion: string = localRushJson.rushVersion;
-  const newRushVersion: string = rushJson.rushVersion;
-  if (oldRushVersion !== newRushVersion) {
+  const newRushVersion: string | undefined = newVersions.get("@microsoft/rush");
+  if (newRushVersion && oldRushVersion !== newRushVersion) {
     console.log(
       `Updating rushVersion in rush.json: ${oldRushVersion} -> ${newRushVersion}`,
     );
