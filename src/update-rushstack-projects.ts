@@ -16,10 +16,7 @@ import { ChildProcess } from "child_process";
 const RUSHSTACK_RUSH_JSON_URL: string =
   "https://raw.githubusercontent.com/microsoft/rushstack/main/rush.json";
 
-async function runAsync(): Promise<void> {
-  const rushConfiguration: RushConfiguration =
-    RushConfiguration.loadFromDefaultLocation();
-
+async function getPublishedPackageNamesAsync(): Promise<ReadonlySet<string>> {
   console.log("Fetching rush.json from microsoft/rushstack...");
   const response: Response = await fetch(RUSHSTACK_RUSH_JSON_URL);
   if (!response.ok) {
@@ -44,15 +41,30 @@ async function runAsync(): Promise<void> {
     `Found ${publishedPackages.size} published packages in rushstack repo.`,
   );
 
-  const newVersions: Map<string, string> = new Map();
+  return publishedPackages;
+}
+
+interface IDependencyNamesResult {
+  dependencyNames: ReadonlySet<string>;
+  additionalPackageJsonByPath: ReadonlyMap<string, IPackageJson>;
+}
+
+async function collectDependencyNamesAsync(
+  rushConfiguration: RushConfiguration,
+): Promise<IDependencyNamesResult> {
+  const publishedPackages: ReadonlySet<string> =
+    await getPublishedPackageNamesAsync();
+
+  const dependencyNames: Set<string> = new Set();
+
   // Always fetch the latest Rush version for updating rushVersion in rush.json
-  newVersions.set("@microsoft/rush", "");
+  dependencyNames.add("@microsoft/rush");
 
   function collectDeps(depSet: Record<string, string> | undefined): void {
     if (depSet) {
       for (const dep of Object.keys(depSet)) {
         if (publishedPackages.has(dep)) {
-          newVersions.set(dep, "");
+          dependencyNames.add(dep);
         }
       }
     }
@@ -103,16 +115,57 @@ async function runAsync(): Promise<void> {
     { concurrency: 50 },
   );
 
-  const packageNames: string[] = [...newVersions.keys()];
+  return { dependencyNames, additionalPackageJsonByPath };
+}
+
+function applyVersionPrefix(oldVersion: string, newVersion: string): string {
+  const match: RegExpMatchArray | null = oldVersion.match(/^([^\d]*)/);
+  const prefix: string = match ? match[1] : "";
+  return prefix + newVersion;
+}
+
+function updateDependencies(
+  depSet: Record<string, string> | undefined,
+  newVersions: ReadonlyMap<string, string>,
+): boolean {
+  let changed: boolean = false;
+  if (depSet) {
+    for (const [dep, oldVersion] of Object.entries(depSet)) {
+      const newVersion: string | undefined = newVersions.get(dep);
+      if (newVersion) {
+        const newVersionWithPrefix: string = applyVersionPrefix(
+          oldVersion,
+          newVersion,
+        );
+        if (newVersionWithPrefix !== oldVersion) {
+          depSet[dep] = newVersionWithPrefix;
+          changed = true;
+        }
+      }
+    }
+  }
+
+  return changed;
+}
+
+interface IFetchVersionsResult {
+  newVersions: ReadonlyMap<string, string>;
+  errors: ReadonlyArray<{ packageName: string; message: string }>;
+}
+
+async function fetchLatestVersionsAsync(
+  dependencyNames: ReadonlySet<string>,
+): Promise<IFetchVersionsResult> {
   console.log(
-    `Fetching latest versions for ${packageNames.length} packages...`,
+    `Fetching latest versions for ${dependencyNames.size} packages...`,
   );
 
   const errors: { packageName: string; message: string }[] = [];
   let completed: number = 0;
 
+  const newVersions: Map<string, string> = new Map();
   await Async.forEachAsync(
-    packageNames,
+    dependencyNames,
     async (packageName) => {
       try {
         await new Promise<void>(
@@ -151,8 +204,8 @@ async function runAsync(): Promise<void> {
       }
 
       completed++;
-      if (completed % 10 === 0 || completed === packageNames.length) {
-        console.log(`  Progress: ${completed}/${packageNames.length}`);
+      if (completed % 10 === 0 || completed === dependencyNames.size) {
+        console.log(`  Progress: ${completed}/${dependencyNames.size}`);
       }
     },
     { concurrency: 10 },
@@ -168,40 +221,24 @@ async function runAsync(): Promise<void> {
     console.log();
   }
 
-  const successCount: number = packageNames.length - errors.length;
+  const successCount: number = dependencyNames.size - errors.length;
   console.log(
-    `Successfully resolved ${successCount}/${packageNames.length} packages. Updating project files...`,
+    `Successfully resolved ${successCount}/${dependencyNames.size} packages. Updating project files...`,
   );
 
-  function applyVersionPrefix(oldVersion: string, newVersion: string): string {
-    const match: RegExpMatchArray | null = oldVersion.match(/^([^\d]*)/);
-    const prefix: string = match ? match[1] : "";
-    return prefix + newVersion;
-  }
+  return { newVersions, errors };
+}
 
-  function updateDependencies(
-    depSet: Record<string, string> | undefined,
-  ): boolean {
-    let changed: boolean = false;
-    if (depSet) {
-      for (const [dep, oldVersion] of Object.entries(depSet)) {
-        const newVersion: string | undefined = newVersions.get(dep);
-        if (newVersion) {
-          const newVersionWithPrefix: string = applyVersionPrefix(
-            oldVersion,
-            newVersion,
-          );
-          if (newVersionWithPrefix !== oldVersion) {
-            depSet[dep] = newVersionWithPrefix;
-            changed = true;
-          }
-        }
-      }
-    }
+interface IUpdateProjectFilesOptions {
+  rushConfiguration: RushConfiguration;
+  additionalPackageJsonByPath: ReadonlyMap<string, IPackageJson>;
+  newVersions: ReadonlyMap<string, string>;
+}
 
-    return changed;
-  }
-
+async function updateProjectFilesAsync(
+  options: IUpdateProjectFilesOptions,
+): Promise<number> {
+  const { rushConfiguration, additionalPackageJsonByPath, newVersions } = options;
   let updatedProjectCount: number = 0;
 
   await Async.forEachAsync(
@@ -209,8 +246,8 @@ async function runAsync(): Promise<void> {
     async ({ projectFolder, packageJson }) => {
       const { dependencies, devDependencies } = packageJson;
       let updated: boolean = false;
-      updated = updateDependencies(dependencies) || updated;
-      updated = updateDependencies(devDependencies) || updated;
+      updated = updateDependencies(dependencies, newVersions) || updated;
+      updated = updateDependencies(devDependencies, newVersions) || updated;
 
       if (updated) {
         updatedProjectCount++;
@@ -229,8 +266,10 @@ async function runAsync(): Promise<void> {
     additionalPackageJsonByPath,
     async ([packageJsonPath, packageJson]) => {
       let updated: boolean = false;
-      updated = updateDependencies(packageJson.dependencies) || updated;
-      updated = updateDependencies(packageJson.devDependencies) || updated;
+      updated =
+        updateDependencies(packageJson.dependencies, newVersions) || updated;
+      updated =
+        updateDependencies(packageJson.devDependencies, newVersions) || updated;
 
       if (updated) {
         updatedProjectCount++;
@@ -243,6 +282,18 @@ async function runAsync(): Promise<void> {
     { concurrency: 50 },
   );
 
+  return updatedProjectCount;
+}
+
+interface IUpdateRushVersionOptions {
+  rushConfiguration: RushConfiguration;
+  newVersions: ReadonlyMap<string, string>;
+}
+
+async function updateRushVersionAsync(
+  options: IUpdateRushVersionOptions,
+): Promise<void> {
+  const { rushConfiguration, newVersions } = options;
   const localRushJson: IRushConfigurationJson = await JsonFile.loadAsync(
     rushConfiguration.rushJsonFile,
   );
@@ -259,7 +310,12 @@ async function runAsync(): Promise<void> {
   } else {
     console.log(`rushVersion is already up to date (${oldRushVersion}).`);
   }
+}
 
+function updatePreferredVersions(
+  rushConfiguration: RushConfiguration,
+  newVersions: ReadonlyMap<string, string>,
+): void {
   const commonVersions: CommonVersionsConfiguration =
     rushConfiguration.defaultSubspace.getCommonVersions();
   let commonVersionsUpdated: boolean = false;
@@ -290,6 +346,26 @@ async function runAsync(): Promise<void> {
       "common-versions.json preferred versions are already up to date.",
     );
   }
+}
+
+async function runAsync(): Promise<void> {
+  const rushConfiguration: RushConfiguration =
+    RushConfiguration.loadFromDefaultLocation();
+
+  const { dependencyNames, additionalPackageJsonByPath } =
+    await collectDependencyNamesAsync(rushConfiguration);
+
+  const { newVersions, errors } =
+    await fetchLatestVersionsAsync(dependencyNames);
+
+  const updatedProjectCount: number = await updateProjectFilesAsync({
+    rushConfiguration,
+    additionalPackageJsonByPath,
+    newVersions,
+  });
+
+  await updateRushVersionAsync({ rushConfiguration, newVersions });
+  updatePreferredVersions(rushConfiguration, newVersions);
 
   console.log(`\nDone. Updated ${updatedProjectCount} project(s).`);
 
