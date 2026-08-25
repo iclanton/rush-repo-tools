@@ -11,7 +11,7 @@ import {
   RushConfiguration,
 } from "@rushstack/rush-sdk";
 import type { IRushConfigurationJson } from "@rushstack/rush-sdk/lib/api/RushConfiguration";
-import { ChildProcess } from "child_process";
+import * as semver from "semver";
 
 const RUSHSTACK_RUSH_JSON_URL: string =
   "https://raw.githubusercontent.com/microsoft/rushstack/main/rush.json";
@@ -153,6 +153,110 @@ interface IFetchVersionsResult {
   errors: ReadonlyArray<{ packageName: string; message: string }>;
 }
 
+interface INpmViewResult {
+  version?: string;
+  versions?: string | string[];
+  deprecated?: string;
+}
+
+/**
+ * Invokes "npm view" for the specified package spec. The "name" and "version" fields are always
+ * requested because npm collapses its JSON output to a bare value whenever only one of the
+ * requested fields is defined, and those two are always defined.
+ */
+async function npmViewAsync(
+  packageSpec: string,
+  extraFields: string[],
+): Promise<INpmViewResult> {
+  const args: string[] = [
+    "view",
+    packageSpec,
+    "--json",
+    "name",
+    "version",
+    ...extraFields,
+  ];
+
+  const { stdout, stderr, exitCode } = await Executable.waitForExitAsync(
+    Executable.spawn("npm", args),
+    { encoding: "utf8" },
+  );
+
+  if (exitCode !== 0) {
+    const trimmedStderr: string = stderr.trim();
+    throw new Error(
+      `"npm ${args.join(" ")}" exited with code ${exitCode}${trimmedStderr ? `:\n  ${trimmedStderr}` : ""}`,
+    );
+  }
+
+  const result: unknown = JsonFile.parseString(stdout);
+  if (typeof result !== "object" || result === null) {
+    throw new Error(
+      `"npm ${args.join(" ")}" returned an unexpected result: ${stdout.trim()}`,
+    );
+  }
+
+  return result as INpmViewResult;
+}
+
+const MAX_DEPRECATED_VERSIONS_TO_SKIP: number = 25;
+
+/**
+ * Determines the newest usable version of a package.
+ *
+ * The "latest" dist-tag cannot be trusted on its own. For example "@microsoft/api-extractor@8.0.0"
+ * was accidentally published in 2019 and deprecated, but it is still tagged "latest" even though
+ * development continued on the 7.x line. Selecting it produces a package that silently fails at
+ * runtime. So when the "latest" version is deprecated, walk backwards through the published
+ * versions until an undeprecated release is found.
+ */
+async function resolveLatestVersionAsync(packageName: string): Promise<string> {
+  const { version, deprecated } = await npmViewAsync(packageName, [
+    "deprecated",
+  ]);
+
+  if (!version) {
+    throw new Error(`"npm view" did not report a version for ${packageName}`);
+  }
+
+  if (!deprecated) {
+    return version;
+  }
+
+  console.log(
+    `  WARNING: ${packageName}@${version} is tagged "latest" but is deprecated: ${deprecated}`,
+  );
+
+  const { versions } = await npmViewAsync(packageName, ["versions"]);
+  const candidates: string[] = (
+    Array.isArray(versions) ? versions : versions ? [versions] : []
+  )
+    .filter(
+      (candidate: string) =>
+        candidate !== version &&
+        semver.valid(candidate) &&
+        !semver.prerelease(candidate),
+    )
+    .sort(semver.rcompare)
+    .slice(0, MAX_DEPRECATED_VERSIONS_TO_SKIP);
+
+  for (const candidate of candidates) {
+    const { deprecated: candidateDeprecated } = await npmViewAsync(
+      `${packageName}@${candidate}`,
+      ["deprecated"],
+    );
+    if (!candidateDeprecated) {
+      console.log(`  Using ${packageName}@${candidate} instead.`);
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    `Unable to find an undeprecated release of ${packageName}; the ${candidates.length} versions ` +
+      `below "latest" (${version}) are all deprecated`,
+  );
+}
+
 async function fetchLatestVersionsAsync(
   dependencyNames: ReadonlySet<string>,
 ): Promise<IFetchVersionsResult> {
@@ -168,36 +272,9 @@ async function fetchLatestVersionsAsync(
     dependencyNames,
     async (packageName) => {
       try {
-        await new Promise<void>(
-          (resolve: () => void, reject: (error: Error) => void) => {
-            const childProcess: ChildProcess = Executable.spawn("npm", [
-              "view",
-              packageName,
-              "version",
-            ]);
-            const stdoutBuffer: string[] = [];
-            const stderrBuffer: string[] = [];
-            childProcess.stdout!.on("data", (chunk) =>
-              stdoutBuffer.push(chunk),
-            );
-            childProcess.stderr!.on("data", (chunk) =>
-              stderrBuffer.push(chunk),
-            );
-            childProcess.on("exit", (code: number) => {
-              if (code) {
-                const stderr: string = stderrBuffer.join("").trim();
-                reject(
-                  new Error(
-                    `"npm view ${packageName} version" exited with code ${code}${stderr ? `:\n  ${stderr}` : ""}`,
-                  ),
-                );
-              } else {
-                const version: string = stdoutBuffer.join("").trim();
-                newVersions.set(packageName, version);
-                resolve();
-              }
-            });
-          },
+        newVersions.set(
+          packageName,
+          await resolveLatestVersionAsync(packageName),
         );
       } catch (error) {
         errors.push({ packageName, message: error.message });
@@ -238,7 +315,8 @@ interface IUpdateProjectFilesOptions {
 async function updateProjectFilesAsync(
   options: IUpdateProjectFilesOptions,
 ): Promise<number> {
-  const { rushConfiguration, additionalPackageJsonByPath, newVersions } = options;
+  const { rushConfiguration, additionalPackageJsonByPath, newVersions } =
+    options;
   let updatedProjectCount: number = 0;
 
   await Async.forEachAsync(
